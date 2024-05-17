@@ -1,25 +1,25 @@
 #!/bin/sh
+
 #load config
-. $(dirname $0)/config.sh
+. "$(dirname "$0")"/config.sh
 
 #create work dirs
-[ ! -e "$Logs" ] && mkdir -p "$Logs" >/dev/null 2>&1
-[ ! -e "$Lib" ] && mkdir -p "$Lib" >/dev/null 2>&1
+[ ! -e "$LOGS" ] && mkdir -p "$LOGS" >/dev/null 2>&1
+[ ! -e "$LIB" ] && mkdir -p "$LIB" >/dev/null 2>&1
 [ ! -e "$SD" ] && mkdir -p "$SD" >/dev/null 2>&1
 
-if [ ! -e $UserConfig ]; then
-  if [ -e $ConfigFile ]; then
-    cp $ConfigFile $UserConfig
+if [ ! -e "$USERCONFIG" ]; then
+  if [ -e "$CONFIGFILE" ]; then
+    cp "$CONFIGFILE" "$USERCONFIG"
   else
-    echo "# Add your rclone remote:folder/on/remote pairs to this file" > $UserConfig
-    echo "# Remove the # from the following line to uninstall KoboCloud" >> $UserConfig
-    echo "#UNINSTALL" >> $UserConfig
+    echo '# Add your rclone remote:folder/on/remote pairs to this file' > "$USERCONFIG"
+    echo '# Remove the # from the following line to uninstall KoboCloud' >> "$USERCONFIG"
+    echo '#UNINSTALL' >> "$USERCONFIG"
   fi
 fi
 
 #bind mount to subfolder of SD card on reboot
-mountpoint -q "$SD"
-if [ $? -ne 0 ]; then
-  mount --bind "$Lib" "$SD"
-  echo sd add /dev/mmcblk1p1 >> /tmp/nickel-hardware-status
+if ! mountpoint -q "$SD"; then
+  mount --bind "$LIB" "$SD"
+  echo 'sd add /dev/mmcblk1p1' >> /tmp/nickel-hardware-status
 fi
