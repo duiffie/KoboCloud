@@ -14,12 +14,11 @@ if grep -q '^UNINSTALL$' $UserConfig; then
 fi
 
 if grep -q "^REMOVE_DELETED$" $UserConfig; then
-	echo "$Lib/filesList.log" > "$Lib/filesList.log"
+   echo "$Lib/filesList.log" > "$Lib/filesList.log"
 fi
 
 
-if [ "$TEST" = "" ]
-then
+if [ "$TEST" = "" ]; then
     #check internet connection
     echo "`$Dt` waiting for internet connection"
     r=1;i=0
@@ -37,15 +36,25 @@ then
 fi
 
 # check for qbdb
-if [ "$PLATFORM" = "Kobo" ]
-then
-  if [ -f "/usr/bin/qndb" ]
-  then
-      echo "NickelDBus found"
-  else
-      echo "NickelDBus not found: installing it!"
-      $CURL -k -L "https://github.com/shermp/NickelDBus/releases/download/0.2.0/KoboRoot.tgz" | tar xz -C /
-  fi
+if [ "$PLATFORM" = "Kobo" ]; then
+    if [ -f "/usr/bin/qndb" ]; then
+        echo "NickelDBus found"
+    else
+        echo "NickelDBus not found: installing it!"
+        wget "https://github.com/shermp/NickelDBus/releases/download/0.2.0/KoboRoot.tgz" -O - | tar xz -C /
+    fi
+
+    if [ -f "${RCLONE}" ]; then
+        echo "rclone found"
+    else
+        echo "rclone not found: installing it!"
+        mkdir -p "${RCLONEDIR}"
+        rcloneTemp="${RCLONEDIR}/rclone.tmp.zip"
+        rm -f "${rcloneTemp}"
+        wget "https://github.com/rclone/rclone/releases/download/v1.64.0/rclone-v1.64.0-linux-arm-v7.zip" -O "${rcloneTemp}"
+        unzip -p "${rcloneTemp}" rclone-v1.64.0-linux-arm-v7/rclone > ${RCLONE}
+        rm -f "${rcloneTemp}"
+    fi
 fi
 
 #list file in lib dir before sync
@@ -53,68 +62,43 @@ lib_list_before=`ls -lnR --full-time "$Lib"`
 echo "$lib_list_before"
 
 while read url || [ -n "$url" ]; do
-  echo "Reading $url"
-  if echo "$url" | grep -q '^#'; then
-    echo "Comment found"
-  elif echo "$url" | grep -q "^REMOVE_DELETED$"; then
-	echo "Will match remote"
-  else
-    echo "Getting $url"
-    if echo $url | grep -q '^https*://www.dropbox.com'; then # dropbox link?
-      $KC_HOME/getDropboxFiles.sh "$url" "$Lib"
-    elif echo $url | grep -q '^DropboxApp:'; then # dropbox token
-      auth=`echo $url | sed -e 's/^DropboxApp://' -e 's/[[:space:]]*$//'`
-      client_id=`echo $auth | sed 's/:.*//'`
-      refresh_token=`echo $auth | sed 's/.*://'`
-      $KC_HOME/getDropboxAppFiles.sh "$client_id" "$refresh_token" "$Lib"
-    elif echo $url | grep -q '^https*://filedn.com\|^https*://filedn.eu\|^https*://[^/]*pcloud'; then
-      $KC_HOME/getpCloudFiles.sh "$url" "$Lib"
-    elif echo $url | grep -q '^https*://drive.google.com'; then
-      $KC_HOME/getGDriveFiles.sh "$url" "$Lib"
-    elif echo $url | grep -q '^https*://app.box.com'; then
-      $KC_HOME/getBoxFiles.sh "$url" "$Lib"
-    else
-      $KC_HOME/getOwncloudFiles.sh "$url" "$Lib"
+    if echo "$url" | grep -q '^#'; then
+        continue
+    elif echo "$url" | grep -q "^REMOVE_DELETED$"; then
+        echo "Will delete files no longer present on remote"
+    elif [ -n "$url" ]; then
+        echo "Getting $url"    
+        command=""
+        if grep -q "^REMOVE_DELETED$" $UserConfig; then    
+            # Remove deleted, do a sync.
+            command="sync"
+        else
+            # Don't remove deleted, do a copy.
+            command="copy"
+        fi
+
+        remote=$(echo "$url" | cut -d: -f1)
+        dir="$Lib/$remote/"
+        mkdir -p "$dir"
+        echo ${RCLONE} ${command} --no-check-certificate -v --config ${RCloneConfig} \"$url\" \"$dir\"
+        ${RCLONE} ${command} --no-check-certificate -v --config ${RCloneConfig} "$url" "$dir"
     fi
-  fi
 done < $UserConfig
-
-recursiveUpdateFiles() {
-for item in *; do
-	if [ -d "$item" ]; then 
-		(cd -- "$item" && recursiveUpdateFiles)
-	elif grep -Fq "$item" "$Lib/filesList.log"; then
-		echo "$item found"
-	else
-		echo "$item not found, deleting"
-		rm "$item"
-	fi
-done
-}
-
-if grep -q "^REMOVE_DELETED$" $UserConfig; then
-	cd "$Lib"
-	echo "Matching remote server"
-	recursiveUpdateFiles
-fi
 
 #list file in lib dir after sync
 lib_list_after=`ls -lnR --full-time "$Lib"`
 echo "$lib_list_after"
 
 #compare filelist before and after
-if [ "$lib_list_after" = "$lib_list_before" ]
-then
-  echo "No Library Change. skipping rescan"
+if [ "$lib_list_after" = "$lib_list_before" ]; then
+    echo "No Library Change. skipping rescan"
 else
-  echo "Library has changed, rescan needed"
+    echo "Library has changed, rescan needed"
 
-
-  if [ "$TEST" = "" ]
-  then
-      # Use NickelDBus for library refresh
-      /usr/bin/qndb -t 3000 -s pfmDoneProcessing -m pfmRescanBooksFull
-  fi
+    if [ "$TEST" = "" ]; then
+        # Use NickelDBus for library refresh
+        /usr/bin/qndb -t 3000 -s pfmDoneProcessing -m pfmRescanBooksFull
+    fi
 fi
 
 rm "$Logs/index" >/dev/null 2>&1
